@@ -1,220 +1,245 @@
-import React, { useState, useEffect } from "react";
-import { motion, useMotionValue, useTransform } from "framer-motion";
-import { Link } from "react-router-dom";
-import PropTypes from "prop-types";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import { client } from "../../sanity";
 import imageUrlBuilder from "@sanity/image-url";
+import { FiChevronDown } from "react-icons/fi";
+import { FaCalendarAlt, FaUsers, FaTrophy } from "react-icons/fa";
+import CountUp from "react-countup";
+import { Fade } from "react-awesome-reveal";
 
 const builder = imageUrlBuilder(client);
-const urlFor = (source) => builder.image(source).url();
-
-const formatDate = (dateString) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-};
-
-const formatSociety = (society) => {
-  const societyMap = {
-    "ieee-sb": "IEEE SB",
-    "ieee-cs": "IEEE CS",
-    "ieee-wie": "IEEE WIE",
-    "ieee-cis": "IEEE CIS",
-    "ieeexacm": "IEEE X ACM",
-    "genesis": "Genesis",
-  };
-  return societyMap[society?.toLowerCase()] || society;
-};
-
-export default function SwipeCards() {
-  const [events, setEvents] = useState([]);
-
-  useEffect(() => {
-    const fetchEvents = async () => {
-      const query = `*[_type == "event"] | order(startDateTime desc) [0...4] {
-        _id, name, startDateTime, eventOverview, description, "poster": poster.asset->url, society
-      }`;
-
-      const data = await client.fetch(query);
-      const today = new Date();
-
-      setEvents(
-        data.map((event) => ({
-          ...event,
-          status: new Date(event.startDateTime) > today ? "upcoming" : "past",
-          poster: event.poster ? urlFor(event.poster) : "",
-          formattedDate: formatDate(event.startDateTime),
-          formattedSociety: formatSociety(event.society),
-        }))
-      );
-    };
-
-    fetchEvents();
-  }, []);
-
-  return (
-    <section className="py-16 bg-white dark:bg-ieee-dark">
-      <motion.h1
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="text-4xl md:text-5xl font-extrabold text-ieee-blue dark:text-ieee-light mb-6 text-center"
-      >
-        Events
-      </motion.h1>
-      <p className="text-lg md:text-xl text-gray-700 dark:text-gray-300 text-center max-w-3xl mx-auto mb-8">
-        Explore upcoming and past events organized by IEEE MUJ.
-      </p>
-      <div className="container mx-auto px-4 md:px-12 lg:px-24">
-        <EventCardSection events={events} />
-      </div>
-    </section>
-  );
+function urlFor(source) {
+  return builder.image(source);
 }
 
-const EventCardSection = ({ events }) => {
-  const [cards, setCards] = useState(events);
-  const [currentEventIndex, setCurrentEventIndex] = useState(0);
+const SwipeCards = () => {
+  const [selectedYear, setSelectedYear] = useState(2025);
+  const [events, setEvents] = useState([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [selectedSociety, setSelectedSociety] = useState("");
+  const dropdownRef = useRef(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await client.fetch(
+        `*[_type == "event"]{
+          _id, name, startDateTime, 
+          "imageUrl": poster.asset->url, 
+          formLink, society, teamSize, prizePool
+        }`
+      );
+      setEvents(data);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (events.length > 0 && cards.length === 0) {
-      setCards([...events].reverse());
-      setCurrentEventIndex(events.length - 1);
+    fetchData();
+  }, [fetchData]);
+
+  const filteredEvents = useMemo(() => {
+    return events
+      .filter(
+        (event) => new Date(event.startDateTime).getFullYear() === selectedYear
+      )
+      .sort((a, b) => new Date(a.startDateTime) - new Date(b.startDateTime));
+  }, [events, selectedYear]);
+
+  const societiesWithEvents = useMemo(() => {
+    const societies = ["ieeexacm", "genesis", "ieee-sb", "ieee-cs", "ieee-wie"];
+    return societies.filter((society) =>
+      filteredEvents.some((event) => event.society === society)
+    );
+  }, [filteredEvents]);
+
+  useEffect(() => {
+    if (!societiesWithEvents.includes(selectedSociety)) {
+      setSelectedSociety(societiesWithEvents[0] || "");
     }
-  }, [events, cards.length]);
+  }, [societiesWithEvents, selectedSociety]);
 
-  if (events.length === 0) {
-    return <p className="text-center text-gray-500">No events available</p>;
-  }
-
-  const handleCardRemove = (removedCardId) => {
-    setCards((prevCards) => {
-      const updatedCards = prevCards.filter((card) => card._id !== removedCardId);
-      const newIndex = updatedCards.length - 1;
-
-      if (updatedCards.length === 0) {
-        return [...events].reverse();
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
       }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-      setCurrentEventIndex(newIndex >= 0 ? newIndex : 0);
-      return updatedCards;
-    });
-  };
-
-  const currentEvent = cards.length > 0 ? cards[cards.length - 1] : null;
-
-  const WORD_LIMIT = 50;
-  const truncateText = (text, limit) => {
-    if (!text) return "";
-    const words = text.split(/\s+/);
-    return words.length <= limit ? text : words.slice(0, limit).join(" ") + "...";
-  };
+  const hasEvents = filteredEvents.length > 0;
 
   return (
-    <div className="flex flex-col lg:grid lg:grid-cols-2 gap-6">
-      <div className="grid place-items-center bg-white dark:bg-ieee-dark">
-        {cards.map((card) => (
-          <SwipeCard
-            key={card._id}
-            {...card}
-            onRemove={() => handleCardRemove(card._id)}
-            isFront={card._id === cards[cards.length - 1]._id}
-          />
-        ))}
-      </div>
-      <div className="flex items-center justify-center p-6 bg-white dark:bg-ieee-dark">
-        {currentEvent ? (
-          <div className="text-center">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4 text-ieee-blue dark:text-ieee-light">
-              {currentEvent.name}
-            </h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-4">
-              {currentEvent.formattedSociety} | {currentEvent.formattedDate}
-            </p>
-            <div className="text-md md:text-lg text-gray-800 dark:text-gray-200 mb-6 space-y-4">
-              {truncateText(
-                currentEvent.status === "upcoming"
-                  ? currentEvent.eventOverview
-                  : currentEvent.description,
-                WORD_LIMIT
-              )
-                .split("\n")
-                .map((para, index) => (
-                  <p key={index}>{para}</p>
-                ))}
-            </div>
-            <Link
-              to={`/events/${currentEvent.status === "upcoming" ? "pre" : "post"}/${currentEvent._id}`}
-              state={{ event: currentEvent }}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300"
+    <div className="bg-gradient-to-b from-white to-gray-100 dark:from-ieee-dark dark:to-gray-900 p-4 scroll-smooth">
+      {/* Year Selector */}
+      <div className="sticky top-0 bg-white dark:bg-ieee-dark z-20 py-4 mb-4 flex justify-between items-center">
+        <div className="flex items-center space-x-4">
+          <span className="text-xl font-semibold text-ieee-blue dark:text-ieee-light">
+            Year:
+          </span>
+          <motion.div className="relative dropdown-menu" ref={dropdownRef}>
+            <button
+              onClick={() => setDropdownOpen((prev) => !prev)}
+              className="flex items-center gap-2 px-4 py-2 rounded-md bg-gray-200/60 dark:bg-gray-700/80 backdrop-blur-lg text-gray-800 dark:text-gray-200 hover:bg-gray-200/80 dark:hover:bg-gray-600/80 transition-colors"
+              aria-label="Select Year"
             >
-              Learn More
-            </Link>
-          </div>
-        ) : (
-          <p className="text-gray-500">Loading event details...</p>
-        )}
+              <span className="font-medium text-sm">{selectedYear}</span>
+              <FiChevronDown
+                className={`transition-transform ${
+                  dropdownOpen ? "rotate-180" : "rotate-0"
+                }`}
+              />
+            </button>
+
+            <AnimatePresence>
+              {dropdownOpen && (
+                <motion.ul
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="absolute bg-white/90 dark:bg-gray-800/90 backdrop-blur-lg shadow-xl rounded-md w-32 mt-2 z-10"
+                >
+                  {[2022, 2023, 2024, 2025].map((year) => (
+                    <motion.li
+                      key={year}
+                      onClick={() => {
+                        setSelectedYear(year);
+                        setDropdownOpen(false);
+                      }}
+                      className="px-4 py-2 text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-200/80 dark:hover:bg-gray-700/80 transition-colors cursor-pointer"
+                    >
+                      {year}
+                    </motion.li>
+                  ))}
+                </motion.ul>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </div>
       </div>
 
-      <div className="flex justify-center mt-4">
-        <motion.p
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 1 }}
-          className="text-gray-500 dark:text-gray-400 text-sm"
-        >
-          Swipe to explore more events!
-        </motion.p>
-      </div>
+      {/* Segmented Control Tabs */}
+      {hasEvents && societiesWithEvents.length > 0 && (
+        <Fade cascade damping={0.1} key={selectedYear}>
+          <div className="flex flex-wrap justify-center space-x-2 mb-6">
+            {societiesWithEvents.map((society) => (
+              <button
+                key={society}
+                onClick={() => setSelectedSociety(society)}
+                className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
+                  selectedSociety === society
+                    ? "bg-ieee-blue text-white dark:bg-ieee-light dark:text-gray-900"
+                    : "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+                }`}
+              >
+                {society.replace("-", " ").toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </Fade>
+      )}
+
+      <Fade key={selectedSociety || selectedYear}>
+        {/* Loading Spinner */}
+        {loading && (
+          <div className="flex justify-center items-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-ieee-blue"></div>
+          </div>
+        )}
+        {/* No Events Message */}
+        {!loading && !hasEvents && (
+          <p className="text-center text-gray-500 mt-4 text-lg">
+            No events found for {selectedYear}
+          </p>
+        )}
+        {/* Events Grid */}
+        {!loading && selectedSociety && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredEvents
+              .filter((event) => event.society === selectedSociety)
+              .map((event) => (
+                <EventCard event={event} key={event._id} />
+              ))}
+          </div>
+        )}
+      </Fade>
     </div>
   );
 };
 
-const SwipeCard = ({ _id, poster, onRemove, isFront }) => {
-  const x = useMotionValue(0);
-  const rotateRaw = useTransform(x, [-150, 150], [-18, 18]);
-  const opacity = useTransform(x, [-150, 0, 150], [0, 1, 0]);
-  const rotate = useTransform(() => {
-    const offset = isFront ? 0 : _id % 2 ? 6 : -6;
-    return `${rotateRaw.get() + offset}deg`;
+const EventCard = ({ event }) => {
+  const navigate = useNavigate();
+  const eventDate = new Date(event.startDateTime);
+  const today = new Date();
+
+  const handleClick = () => {
+    const route =
+      eventDate < today
+        ? `/events/post/${event._id}`
+        : `/events/pre/${event._id}`;
+    navigate(route);
+  };
+
+  const formattedDate = eventDate.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   });
 
-  const [showHint, setShowHint] = useState(true);
-
-  useEffect(() => {
-    setTimeout(() => setShowHint(false), 2000);
-  }, []);
+  const optimizedImageUrl = urlFor(event.imageUrl)
+    .width(window.innerWidth < 640 ? 280 : 440)
+    .height(window.innerWidth < 640 ? 380 : 420)
+    .auto("format")
+    .url();
 
   return (
-    <motion.img
-      src={poster}
-      alt={`Poster for ${_id}`}
-      className="h-[22rem] md:h-[31rem] w-[18rem] md:w-[25rem] origin-bottom rounded-lg bg-white object-cover hover:cursor-grab active:cursor-grabbing"
-      style={{ gridRow: 1, gridColumn: 1, x, opacity, rotate }}
-      drag={isFront ? "x" : false}
-      dragConstraints={{ left: 0, right: 0 }}
-      onDragEnd={() => {
-        const velocityThreshold = window.innerWidth < 768 ? 300 : 400;
-        const distanceThreshold = window.innerWidth < 768 ? 75 : 100;
-      
-        if (Math.abs(x.getVelocity()) > velocityThreshold || Math.abs(x.get()) > distanceThreshold) {
-          onRemove();
-        }
-      }}  
-    />
+    <motion.div
+      onClick={handleClick}
+      className="group relative h-[280px] w-full sm:h-[420px] overflow-hidden rounded-2xl shadow-2xl cursor-pointer transition-transform duration-300 hover:scale-105 will-change-transform"
+      whileHover={{ scale: 1.05 }}
+      aria-label={`Event: ${event.name}`}
+    >
+      <div
+        className="absolute top-0 left-0 w-full h-full bg-cover bg-center"
+        style={{
+          backgroundImage: `url(${optimizedImageUrl || "/fallback.jpg"})`,
+        }}
+      ></div>
+
+      <motion.div className="absolute inset-0 z-10 flex flex-col justify-end p-4 sm:p-6 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        <h3 className="text-xl sm:text-3xl font-bold uppercase text-white tracking-wide mb-2 drop-shadow-xl">
+          {event.name}
+        </h3>
+        <div className="flex items-center space-x-2 sm:space-x-4 text-gray-200">
+          <FaCalendarAlt className="w-4 h-4 sm:w-5 sm:h-5" />
+          <p className="text-sm sm:text-base">{formattedDate}</p>
+        </div>
+        <div className="flex items-center space-x-2 sm:space-x-4 text-gray-200 mt-2">
+          <FaUsers className="w-4 h-4 sm:w-5 sm:h-5" />
+          <p className="text-sm sm:text-base">
+            Team Size: <CountUp end={event.teamSize} duration={2} />
+          </p>
+        </div>
+        {event.prizePool > 0 && (
+          <div className="flex items-center space-x-2 sm:space-x-4 text-gray-200 mt-2">
+            <FaTrophy className="w-4 h-4 sm:w-5 sm:h-5" />
+            <p className="text-sm sm:text-base">
+              Prize Pool:{" "}
+              <CountUp end={event.prizePool} duration={2} prefix="₹" />
+            </p>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
   );
 };
 
-EventCardSection.propTypes = {
-  events: PropTypes.array.isRequired,
-};
-
-SwipeCard.propTypes = {
-  _id: PropTypes.string.isRequired,
-  poster: PropTypes.string,
-  onRemove: PropTypes.func.isRequired,
-  isFront: PropTypes.bool.isRequired,
-};
+export default SwipeCards;
