@@ -14,6 +14,7 @@ import PostEventPage from "./pages/PostEventPage";
 import Team from "./pages/Team";
 import WebsiteTeam from "./pages/WebsiteTeam";
 import AnnualReport from "./pages/AnnualReport";
+import Faculty from "./pages/Faculty";
 import ResponsiveGallery from "./components/ResponsiveGallery";
 import SwipeCards from "./components/SwipeCards";
 import AchievementsPage from "./pages/AchievementsPage";
@@ -42,6 +43,7 @@ function App() {
           <Route path="/societies" element={<div className="pt-20"><Societies /></div>} />
           <Route path="/website-team" element={<div className="pt-20"><WebsiteTeam /></div>} />
           <Route path="/team" element={<div className="pt-20"><Team /></div>} />
+          <Route path="/faculty" element={<div className="pt-20"><Faculty /></div>} />
           <Route path="/contact" element={<div className="pt-20"><Contact /></div>} />
           <Route path="/gallery" element={<div className="pt-20"><Gallery /></div>} />
           <Route path="/achievements" element={<div className="pt-20"><AchievementsPage /></div>} />

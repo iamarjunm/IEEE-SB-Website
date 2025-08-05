@@ -11,6 +11,7 @@ import {
   Image,
   BookOpen,
   Mail,
+  UserCheck,
 } from "lucide-react";
 
 export default function Navbar() {
@@ -45,6 +46,12 @@ export default function Navbar() {
             path: "/team",
             icon: <Users />,
             description: "Meet our dedicated team of innovators and leaders.",
+          },
+          {
+            name: "Faculty",
+            path: "/faculty",
+            icon: <UserCheck />,
+            description: "Meet the distinguished faculty supporting our journey.",
           },
           {
             name: "Societies",
